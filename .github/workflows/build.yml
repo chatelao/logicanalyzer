@@ -6,6 +6,8 @@ on:
   pull_request:
     branches: [ "master" ]
   workflow_dispatch:
+  release:
+    types: [created]
 
 
 jobs:
@@ -13,13 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
 
       - name: Cache Pico SDK
         id: cache-pico-sdk
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: /home/runner/work/pico-sdk
           key: ${{ runner.os }}-pico-sdk-${{ hashFiles('**/pico_sdk_import.cmake') }}
@@ -28,6 +30,8 @@ jobs:
         if: steps.cache-pico-sdk.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/raspberrypi/pico-sdk.git /home/runner/work/pico-sdk
+          cd /home/runner/work/pico-sdk
+          git submodule update --init
 
       - name: Set PICO_SDK_PATH
         run: echo "PICO_SDK_PATH=/home/runner/work/pico-sdk" >> $GITHUB_ENV
@@ -37,7 +41,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-arm-none-eabi cmake
 
-      - name: Build
+      - name: Build Firmware
         run: |
           cd Firmware/LogicAnalyzer_V2
           mkdir build
@@ -45,8 +49,44 @@ jobs:
           cmake ..
           make
 
-      - name: Upload UF2
-        uses: actions/upload-artifact@v3
+      - name: Upload Firmware
+        uses: actions/upload-artifact@v4
         with:
           name: logic-analyzer-firmware
           path: Firmware/LogicAnalyzer_V2/build/LogicAnalyzer.uf2
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Install PowerShell
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y powershell
+
+      - name: Build Software
+        run: |
+          VERSION="6.0.0.0"
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.ref_name }}"
+          fi
+          pwsh -Command "& { . ./Software/LogicAnalyzer/publish.ps1 -packageVersion $VERSION }"
+
+      - name: Upload Software
+        uses: actions/upload-artifact@v4
+        with:
+          name: logic-analyzer-software
+          path: Software/Packages/*
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: |
+            Firmware/LogicAnalyzer_V2/build/LogicAnalyzer.uf2
+            Software/Packages/*.zip
+          tag: ${{ github.ref_name }}
+          overwrite: true
+          file_glob: true
