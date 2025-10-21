@@ -74,9 +74,7 @@ jobs:
           mv ../Packages/* ../../release_assets/
 
       - name: Package Hardware Files
-        run: |
-          ./.github/workflows/package_hardware.sh
-          mv hardware_packages/*.zip release_assets/
+        run: ./.github/workflows/package_hardware.sh
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
